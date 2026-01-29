@@ -15,75 +15,63 @@ class CalculatorPage extends StatefulWidget {
 class _CalculatorPageState extends State<CalculatorPage> {
   String _expression = '';
   String _display = '0';
+  String _tempResult = '';
   String _currentOperand = ''; // Track the current number being entered
+
+  bool _isScientific = false;
+  bool _isDegree = true;
 
   void _onTap(String value) {
     setState(() {
       if (value == 'AC') {
         _expression = '';
         _display = '0';
+        _tempResult = '';
         _currentOperand = '';
+      } else if (value == 'Deg') {
+        _isDegree = !_isDegree;
       } else if (value == '=') {
-        // Evaluate
-        // Handle case where expression ends with operator
-        if (_expression.isNotEmpty && ['+', '-', '×', '÷'].contains(_expression[_expression.length - 1])) {
-           return; 
-        }
+        if (_expression.isEmpty) return;
         
-        final result = CalculatorEngine.evaluate(_expression.replaceAll(',', ''));
+        final result = CalculatorEngine.evaluate(_expression, isDegree: _isDegree);
         _display = _formatNumber(result);
-        _expression = result; // Reset expression to result
+        _expression = result; 
         _currentOperand = result;
-      } else if (['+', '-', '×', '÷', '%'].contains(value)) {
-        // Operator
-        if (_expression.isEmpty && _display != '0') {
-           _expression = _display.replaceAll(',', '');
+        _tempResult = ''; // Clear temporary result on equals
+      } else if (value == '⌫') {
+        if (_expression.isNotEmpty) {
+          _expression = _expression.substring(0, _expression.length - 1);
+          _display = _expression.isEmpty ? '0' : _expression;
         }
-        
-        // Prevent double operators
-        if (_expression.isNotEmpty && ['+', '-', '×', '÷', '%'].contains(_expression[_expression.length - 1])) {
-           _expression = _expression.substring(0, _expression.length - 1) + value;
-        } else {
-           _expression += value;
-        }
-        
-        _currentOperand = ''; // Reset current operand on operator
+      } else if (['sin', 'cos', 'tan', 'log', 'ln', 'sqrt'].contains(value)) {
+        _expression += '$value(';
+      } else if (value == 'π') {
+        _expression += 'pi';
+      } else if (value == 'e') {
+        _expression += 'e';
+      } else if (['+', '-', '×', '÷', '%', '^', '(', ')', '!'].contains(value)) {
+        _expression += value;
       } else {
-        // Digit or Dot
-        if (value == '.' && _currentOperand.contains('.')) return;
+        _expression += value;
+      }
+      
+      // Update display and calculate temporary result
+      if (value != '=') {
+        _display = _expression.isEmpty ? '0' : _expression;
         
-        if (_currentOperand == '0' && value != '.') {
-           _currentOperand = value;
+        // Calculate temporary result if expression is not just a single number or empty
+        if (_expression.isNotEmpty && 
+            _expression != 'Error' && 
+            RegExp(r'[+\-×÷%^^!()]').hasMatch(_expression)) {
+          final temp = CalculatorEngine.evaluate(_expression, isDegree: _isDegree);
+          if (temp != 'Error') {
+            _tempResult = _formatNumber(temp);
+          } else {
+             _tempResult = '';
+          }
         } else {
-           _currentOperand += value;
+          _tempResult = '';
         }
-        
-        // Update display
-         _display = _formatNumber(_currentOperand);
-         
-         // Update expression - this is tricky because we append. 
-         // If we just append to expression, we need to sync it with current operand.
-         // Simpler approach: Rebuild expression from history? 
-         // Or: Just keep expression as the source of truth for the PREVIOUS parts, 
-         // and append current operand to it for the view?
-         // Actually, let's just append digits to expression.
-         // If we just typed a digit, we might need to buffer it.
-         
-         // Fix: If _expression ends with a digit, we are appending to a number.
-         // Ideally, we shouldn't maintain two states (_expression and _currentOperand) that conflict.
-         // Let's treat _expression as the master "tape".
-         
-         // However, formatting requires us to know the "current block" of numbers.
-         // So, keeping _currentOperand is useful for display formatting.
-         
-         // When user types '1', '0', '0', '0'
-         // Tap '1': exp='1', cur='1', disp='1'
-         // Tap '0': exp='10', cur='10', disp='10'
-         // Tap '0': exp='100', cur='100', disp='100'
-         // Tap '0': exp='1000', cur='1000', disp='1,000'
-         
-         // So yes, just append to expression.
-         _expression += value;
       }
     });
   }
@@ -93,14 +81,16 @@ class _CalculatorPageState extends State<CalculatorPage> {
     if (s == 'Error') return s;
     
     try {
-      final parts = s.split('.');
-      String integerPart = parts[0].replaceAll(',', '');
-      
+      final double val = double.parse(s.replaceAll(',', ''));
+      // Formatter for large numbers
       final pattern = RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))');
-      String formatted = integerPart.replaceAllMapped(pattern, (m) => '${m[1]},');
       
-      if (parts.length > 1) {
-        return '$formatted.${parts[1]}';
+      String intPart = val.toInt().toString();
+      String formatted = intPart.replaceAllMapped(pattern, (m) => '${m[1]},');
+      
+      if (s.contains('.')) {
+        String decPart = s.split('.')[1];
+        return '$formatted.$decPart';
       }
       return formatted;
     } catch (_) {
@@ -130,127 +120,288 @@ class _CalculatorPageState extends State<CalculatorPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
 
     return Scaffold(
       backgroundColor: theme.scaffoldBackgroundColor,
       body: SafeArea(
-        child: Column(
-          children: [
-            // Expression and Result Display
-            Expanded(
-              flex: 2,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      _expression,
-                      style: theme.textTheme.displayMedium,
-                      textAlign: TextAlign.right,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _display,
-                      style: theme.textTheme.displayLarge,
-                      textAlign: TextAlign.right,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Keypad area
-            Expanded(
-              flex: 3,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    // Main Grid (3 columns)
-                    Expanded(
-                      flex: 3,
-                      child: Column(
-                        children: [
-                          _buildRow([
-                            _buildThemeToggle(),
-                            _buildBtn('%', isOperator: true),
-                            _buildBtn('÷', isOperator: true),
-                          ]),
-                          const SizedBox(height: 16),
-                          _buildRow([
-                            _buildBtn('7'),
-                            _buildBtn('8'),
-                            _buildBtn('9'),
-                          ]),
-                          const SizedBox(height: 16),
-                          _buildRow([
-                            _buildBtn('4'),
-                            _buildBtn('5'),
-                            _buildBtn('6'),
-                          ]),
-                          const SizedBox(height: 16),
-                          _buildRow([
-                            _buildBtn('1'),
-                            _buildBtn('2'),
-                            _buildBtn('3'),
-                          ]),
-                          const SizedBox(height: 16),
-                          _buildRow([
-                            _buildBtn('AC', isAction: true),
-                            _buildBtn('0'),
-                            _buildBtn('.'),
-                          ]),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Operator Column (1 column)
-                    Expanded(
-                      flex: 1,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(child: _buildBtn('×', isOperator: true)),
-                          const SizedBox(height: 16),
-                          Expanded(child: _buildBtn('-', isOperator: true)),
-                          const SizedBox(height: 16),
-                          Expanded(child: _buildBtn('+', isOperator: true)),
-                          const SizedBox(height: 16),
-                          Expanded(
-                            flex: 2,
-                            child: _buildBtn('=',
-                                isAccent: true,
-                                isDoubleHeight: true,
-                                onLongPress: _onEqualLongPress,
-                                onLongPressEnd: _onEqualLongPressEnd),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return OrientationBuilder(
+              builder: (context, orientation) {
+                final isLandscape = orientation == Orientation.landscape;
+                
+                if (isLandscape) {
+                  return _buildLandscapeLayout(theme, constraints);
+                } else {
+                  return _buildPortraitLayout(theme, constraints);
+                }
+              },
+            );
+          },
         ),
       ),
     );
   }
 
-  Widget _buildRow(List<Widget> children) {
-    return Expanded(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children
-            .expand((w) => [Expanded(child: w), const SizedBox(width: 16)])
-            .toList()
-          ..removeLast(),
+  Widget _buildPortraitLayout(ThemeData theme, BoxConstraints constraints) {
+    return Column(
+      children: [
+        // Expression and Result Display
+        Expanded(
+          flex: 3,
+          child: _buildDisplayArea(theme),
+        ),
+
+        // Scientific Toggle Row
+        _buildControlsRow(theme),
+
+        // Keypad area
+        Expanded(
+          flex: 7,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+            child: Column(
+              children: [
+                if (_isScientific) ...[
+                  Expanded(child: _buildScientificRows()),
+                  const SizedBox(height: 8),
+                ],
+                Expanded(
+                  flex: _isScientific ? 2 : 1,
+                  child: _buildStandardRows(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLandscapeLayout(ThemeData theme, BoxConstraints constraints) {
+    return Row(
+      children: [
+        // Left side: Display
+        Expanded(
+          flex: 2,
+          child: Column(
+            children: [
+              Expanded(child: _buildDisplayArea(theme)),
+              _buildControlsRow(theme),
+            ],
+          ),
+        ),
+        // Vertical Divider
+        VerticalDivider(
+          width: 1,
+          thickness: 1,
+          color: theme.dividerColor.withOpacity(0.1),
+        ),
+        // Right side: Keypad
+        Expanded(
+          flex: 3,
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                if (_isScientific) ...[
+                  Expanded(child: _buildScientificRows()),
+                  const SizedBox(height: 8),
+                ],
+                Expanded(
+                  flex: _isScientific ? 2 : 1,
+                  child: _buildStandardRows(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDisplayArea(ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(24, 8, 8, 16),
+      child: Stack(
+        children: [
+          Positioned(
+            top: 0,
+            right: 0,
+            child: _buildThemeToggle(),
+          ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  reverse: true,
+                  child: Text(
+                    _tempResult,
+                    style: theme.textTheme.displayMedium?.copyWith(
+                      fontSize: 20,
+                      color: theme.textTheme.displayMedium?.color?.withOpacity(0.5),
+                    ),
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  reverse: true,
+                  child: Text(
+                    _display,
+                    style: theme.textTheme.displayLarge?.copyWith(
+                      fontSize: 48,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: -1,
+                    ),
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _buildControlsRow(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          IconButton(
+            icon: Icon(
+              _isScientific ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+              color: theme.iconTheme.color?.withOpacity(0.4),
+              size: 24,
+            ),
+            onPressed: () => setState(() => _isScientific = !_isScientific),
+          ),
+          const Spacer(),
+          // Theme toggle moved to display area
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScientificRows() {
+    return Column(
+      children: [
+        Expanded(
+          child: _buildRow([
+            _buildBtn('sqrt', isOperator: true),
+            _buildBtn('π', isOperator: true),
+            _buildBtn('^', isOperator: true),
+            _buildBtn('!', isOperator: true),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildRow([
+            _buildBtn(_isDegree ? 'Deg' : 'Rad', isOperator: true),
+            _buildBtn('sin', isOperator: true),
+            _buildBtn('cos', isOperator: true),
+            _buildBtn('tan', isOperator: true),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildRow([
+            _buildBtn('Inv', isOperator: true),
+            _buildBtn('e', isOperator: true),
+            _buildBtn('ln', isOperator: true),
+            _buildBtn('log', isOperator: true),
+          ]),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStandardRows() {
+    return Column(
+      children: [
+        Expanded(
+          child: _buildRow([
+            _buildBtn('AC', isAction: true),
+            _buildBtn('(', isOperator: true),
+            _buildBtn(')', isOperator: true),
+            _buildBtn('÷', isOperator: true),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildRow([
+            _buildBtn('7'),
+            _buildBtn('8'),
+            _buildBtn('9'),
+            _buildBtn('×', isOperator: true),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildRow([
+            _buildBtn('4'),
+            _buildBtn('5'),
+            _buildBtn('6'),
+            _buildBtn('-', isOperator: true),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildRow([
+            _buildBtn('1'),
+            _buildBtn('2'),
+            _buildBtn('3'),
+            _buildBtn('+', isOperator: true),
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildRow([
+            _buildBtn('0'),
+            _buildBtn('.'),
+            _buildBtn('%', isOperator: true),
+            _buildBtn('⌫', isAction: true), // Backspace integrated here
+          ]),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _buildRow([
+             _buildBtn('=',
+                isAccent: true,
+                onLongPress: _onEqualLongPress,
+                onLongPressEnd: _onEqualLongPressEnd),
+          ]),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRow(List<Widget> children) {
+    return Row(
+      children: children
+          .expand((w) => [
+                w is Spacer 
+                  ? w 
+                  : Expanded(
+                      child: w,
+                    ),
+                const SizedBox(width: 8)
+              ])
+          .toList()
+        ..removeLast(),
     );
   }
 
@@ -277,13 +428,11 @@ class _CalculatorPageState extends State<CalculatorPage> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return CalcButton(
-      text: '',
-      onTap: _toggleTheme,
-      isOperator: true,
+    return IconButton(
+      onPressed: _toggleTheme,
       icon: Icon(
         isDark ? Icons.wb_sunny_outlined : Icons.nightlight_round_outlined,
-        color: isDark ? Colors.white70 : Colors.black.withOpacity(0.8),
+        color: theme.iconTheme.color?.withOpacity(0.4),
       ),
     );
   }

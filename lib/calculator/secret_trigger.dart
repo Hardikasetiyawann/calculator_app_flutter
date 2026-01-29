@@ -7,7 +7,7 @@ class SecretTrigger {
   static void start(void Function() onTrigger) {
     _triggered = false;
     _timer?.cancel();
-    _timer = Timer(const Duration(seconds: 15), () {
+    _timer = Timer(const Duration(seconds: 10), () {
       _triggered = true;
       onTrigger();
     });

@@ -47,6 +47,20 @@ class FileCrypto {
     return output.writeAsBytes(decrypted, flush: true);
   }
 
+  static Future<Uint8List> decryptToBytes(File input) async {
+    final key = await _getKey();
+    final encrypter = Encrypter(AES(key));
+
+    final bytes = await input.readAsBytes();
+    
+    // Extract IV from the first 16 bytes
+    final ivBytes = bytes.sublist(0, 16);
+    final encryptedBytes = bytes.sublist(16);
+    
+    final iv = IV(Uint8List.fromList(ivBytes));
+    return Uint8List.fromList(encrypter.decryptBytes(Encrypted(Uint8List.fromList(encryptedBytes)), iv: iv));
+  }
+
   static Future<void> deleteFile(File file) async {
     if (await file.exists()) {
       await file.delete();

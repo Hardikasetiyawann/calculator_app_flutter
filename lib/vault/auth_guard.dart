@@ -16,10 +16,7 @@ class AuthGuard {
 
       return await _auth.authenticate(
         localizedReason: 'Verify identity to access vault',
-        options: const AuthenticationOptions(
-          biometricOnly: false,
-          stickyAuth: true,
-        ),
+        biometricOnly: false,
       );
     } catch (e) {
       debugPrint('Auth error: $e');

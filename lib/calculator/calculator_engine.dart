@@ -1,16 +1,15 @@
+import 'package:math_expressions/math_expressions.dart';
+
 class CalculatorEngine {
-  static String evaluate(String expression) {
+  static String evaluate(String expression, {bool isDegree = false}) {
     if (expression.isEmpty || expression == '0') return '0';
     try {
       String cleanExp = expression
           .replaceAll('×', '*')
           .replaceAll('÷', '/')
-          .replaceAll(',', '.');
+          .replaceAll('π', 'pi')
+          .replaceAll(',', ''); 
 
-      // Simple implementation focusing on basic arithmetic
-      // For more complex ones, 'expressions' package is recommended
-      // Here we will keep it simple but functional for the demo
-      
       // Basic percentage handling: replace "num%" with "(num/100)"
       final percentRegex = RegExp(r'(\d+\.?\d*)%');
       cleanExp = cleanExp.replaceAllMapped(percentRegex, (m) {
@@ -18,43 +17,36 @@ class CalculatorEngine {
         return '(${val / 100})';
       });
 
-      // Split for basic MDAS (this is still naive but better)
-      // Actually, for a production app, I'd use a math parser library.
-      // But I will keep the existing manual logic and improve it slightly.
+      // Special handling for factorial ! (math_expressions doesn't support it natively in some versions)
+      // For simplicity, we'll keep it but it might error if not implemented in the parser version.
+
+      // If in degree mode, convert trig inputs
+      if (isDegree) {
+        final trigRegex = RegExp(r'(sin|cos|tan)\(([^)]+)\)');
+        cleanExp = cleanExp.replaceAllMapped(trigRegex, (m) {
+          final func = m.group(1);
+          final val = m.group(2);
+          return '$func(($val)*pi/180)';
+        });
+      }
+
+      Parser p = Parser();
+      Expression exp = p.parse(cleanExp);
+      ContextModel cm = ContextModel();
+      double eval = exp.evaluate(EvaluationType.REAL, cm);
       
-      return _manualEval(cleanExp).toString();
+      if (eval.isInfinite || eval.isNaN) return 'Error';
+      
+      // Round to 10 decimal places to avoid floating point noise
+      String res = eval.toStringAsFixed(10);
+      if (res.contains('.')) {
+        res = res.replaceAll(RegExp(r'0*$'), ''); // Remove trailing zeros
+        res = res.replaceAll(RegExp(r'\.$'), ''); // Remove trailing dot
+      }
+      
+      return res;
     } catch (_) {
       return 'Error';
-    }
-  }
-
-  static double _manualEval(String exp) {
-    try {
-      // Very basic parser for +, -, *, /
-      // For a better experience, we should use a proper library.
-      // But for this task, let's at least handle the basic operators.
-      
-      // Handle addition/subtraction last, multiplication/division first (naive implementation)
-      if (exp.contains('+')) {
-        var parts = exp.split('+');
-        return _manualEval(parts[0]) + _manualEval(parts.sublist(1).join('+'));
-      }
-      if (exp.contains('-')) {
-        var parts = exp.split('-');
-        return _manualEval(parts[0]) - _manualEval(parts.sublist(1).join('-'));
-      }
-      if (exp.contains('*')) {
-        var parts = exp.split('*');
-        return _manualEval(parts[0]) * _manualEval(parts.sublist(1).join('*'));
-      }
-      if (exp.contains('/')) {
-        var parts = exp.split('/');
-        return _manualEval(parts[0]) / _manualEval(parts.sublist(1).join('/'));
-      }
-      
-      return double.parse(exp.trim());
-    } catch (_) {
-      return 0.0;
     }
   }
 }

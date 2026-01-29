@@ -28,7 +28,10 @@ class _MediaVaultPageState extends State<MediaVaultPage> {
     setState(() => isLoading = true);
     final dir = await FileManager.getVaultDir();
     if (await dir.exists()) {
-      final list = dir.listSync().whereType<File>().toList();
+      final list = dir.listSync().whereType<File>().where((f) {
+        final name = f.path.split(Platform.pathSeparator).last;
+        return name.startsWith('img_') || name.startsWith('vid_');
+      }).toList();
       // Sort by name (timestamp) descending
       list.sort((a, b) => b.path.compareTo(a.path));
       setState(() {
@@ -43,26 +46,38 @@ class _MediaVaultPageState extends State<MediaVaultPage> {
   Future<void> _showPickOptions() async {
     showModalBottomSheet(
       context: context,
-      builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            ListTile(
-              leading: const Icon(Icons.image),
-              title: const Text('Pick Image'),
-              onTap: () {
-                Navigator.pop(context);
-                pickMedia(ImageSource.gallery, isVideo: false);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.videocam),
-              title: const Text('Pick Video'),
-              onTap: () {
-                Navigator.pop(context);
-                pickMedia(ImageSource.gallery, isVideo: true);
-              },
-            ),
-          ],
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: const BoxDecoration(
+          color: Color(0xFF232327),
+          borderRadius: BorderRadius.only(topLeft: Radius.circular(24), topRight: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Wrap(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(24, 20, 24, 10),
+                child: Text('Add Media', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.image_rounded, color: Colors.blueAccent),
+                title: const Text('Pick Image', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  pickMedia(ImageSource.gallery, isVideo: false);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.videocam_rounded, color: Colors.purpleAccent),
+                title: const Text('Pick Video', style: TextStyle(color: Colors.white)),
+                onTap: () {
+                  Navigator.pop(context);
+                  pickMedia(ImageSource.gallery, isVideo: true);
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
       ),
     );
@@ -87,14 +102,12 @@ class _MediaVaultPageState extends State<MediaVaultPage> {
       encryptedFile,
     );
 
-    // Attempt to delete the original file
     try {
       final original = File(picked.path);
       if (await original.exists()) {
         await original.delete();
       }
     } catch (e) {
-      // Ignore errors if file cannot be deleted (e.g. permission issues on some android versions)
       debugPrint('Error deleting original file: $e');
     }
     
@@ -106,6 +119,7 @@ class _MediaVaultPageState extends State<MediaVaultPage> {
     
     showDialog(
       context: context,
+      useSafeArea: false,
       builder: (context) => _MediaPreviewDialog(
         file: file, 
         isVideo: isVideo, 
@@ -119,47 +133,99 @@ class _MediaVaultPageState extends State<MediaVaultPage> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1E),
+      backgroundColor: isDark ? const Color(0xFF141416) : const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text('Media Vault'),
+        title: const Text('Media Vault', style: TextStyle(fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        iconTheme: IconThemeData(color: isDark ? Colors.white : Colors.black87),
+        titleTextStyle: TextStyle(color: isDark ? Colors.white : Colors.black87, fontSize: 20),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline, size: 28),
-            onPressed: _showPickOptions,
-          )
+          if (files.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.add_circle_outline, size: 26),
+              onPressed: _showPickOptions,
+            )
         ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
           : files.isEmpty
-              ? _buildEmptyState()
+              ? _buildEmptyState(isDark)
               : GridView.builder(
                   padding: const EdgeInsets.all(16),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: 3,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
                   ),
                   itemCount: files.length,
                   itemBuilder: (_, i) {
                     final file = files[i];
                     final isVideo = file.path.contains('vid_');
+                    
                     return GestureDetector(
                       onTap: () => _viewMedia(file),
                       child: Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2D2D33),
-                          borderRadius: BorderRadius.circular(16),
+                          color: isDark ? const Color(0xFF232327) : Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            if (!isDark)
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 4,
+                                offset: const Offset(0, 2),
+                              ),
+                          ],
                         ),
-                        child: Center(
-                          child: Icon(
-                            isVideo ? Icons.play_circle_outline : Icons.image_outlined,
-                            color: Colors.white54,
-                            size: 32,
-                           ),
+                        clipBehavior: Clip.hardEdge,
+                        child: Stack(
+                          children: [
+                            Positioned.fill(
+                              child: isVideo 
+                                ? Container(
+                                    color: Colors.black87,
+                                    child: const Center(
+                                      child: Icon(
+                                        Icons.play_circle_filled_rounded,
+                                        color: Colors.white54,
+                                        size: 40,
+                                       ),
+                                    ),
+                                  )
+                                : FutureBuilder<Uint8List>(
+                                    future: FileCrypto.decryptToBytes(file),
+                                    builder: (context, snapshot) {
+                                      if (snapshot.hasData) {
+                                        return Image.memory(
+                                          snapshot.data!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_rounded, color: Colors.white24),
+                                        );
+                                      }
+                                      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                                    },
+                                  ),
+                            ),
+                            if (isVideo)
+                              Positioned(
+                                top: 6,
+                                right: 6,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black54,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Icon(Icons.videocam_rounded, color: Colors.white, size: 12),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     );
@@ -168,16 +234,45 @@ class _MediaVaultPageState extends State<MediaVaultPage> {
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState(bool isDark) {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.lock_outline, size: 80, color: Colors.white.withOpacity(0.1)),
-          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: (isDark ? Colors.white : Colors.black).withOpacity(0.03),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.photo_library_rounded, size: 64, color: (isDark ? Colors.white : Colors.black).withOpacity(0.1)),
+          ),
+          const SizedBox(height: 24),
           Text(
-            'Vault is Empty',
-            style: TextStyle(color: Colors.white.withOpacity(0.3), fontSize: 18),
+            'Gallery is empty',
+            style: TextStyle(
+              color: isDark ? Colors.white : Colors.black87, 
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Encrypt and hide your private media.',
+            style: TextStyle(color: (isDark ? Colors.white : Colors.black).withOpacity(0.4), fontSize: 14),
+          ),
+          const SizedBox(height: 32),
+          ElevatedButton.icon(
+            onPressed: _showPickOptions,
+            icon: const Icon(Icons.add),
+            label: const Text('Add Media'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.purpleAccent,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
           ),
         ],
       ),
@@ -244,40 +339,52 @@ class _MediaPreviewDialogState extends State<_MediaPreviewDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
+    return Scaffold(
       backgroundColor: Colors.black,
-      insetPadding: EdgeInsets.zero,
-      child: Column(
+      body: Stack(
         children: [
-          AppBar(
-            backgroundColor: Colors.transparent,
-            leading: IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () => Navigator.pop(context),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
-                onPressed: () {
-                  widget.onDelete();
-                  Navigator.pop(context);
-                },
-              ),
-            ],
-          ),
-          Expanded(
+          Center(
             child: isDecrypting
-                ? const Center(child: CircularProgressIndicator())
+                ? const CircularProgressIndicator(color: Colors.white)
                 : widget.isVideo
-                    ? Center(
-                        child: _videoController!.value.isInitialized
-                            ? AspectRatio(
-                                aspectRatio: _videoController!.value.aspectRatio,
-                                child: VideoPlayer(_videoController!),
-                              )
-                            : const CircularProgressIndicator(),
-                      )
-                    : Image.file(tempFile!, fit: BoxFit.contain),
+                    ? _videoController!.value.isInitialized
+                        ? AspectRatio(
+                            aspectRatio: _videoController!.value.aspectRatio,
+                            child: VideoPlayer(_videoController!),
+                          )
+                        : const CircularProgressIndicator(color: Colors.white)
+                    : InteractiveViewer(
+                        child: Image.file(tempFile!, fit: BoxFit.contain),
+                      ),
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 10,
+            left: 16,
+            right: 16,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                    child: const Icon(Icons.close, color: Colors.white),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () {
+                    widget.onDelete();
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle),
+                    child: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
